@@ -1,4 +1,5 @@
 pyrogram
+TgCrypto
 pyromod
 pymongo
 dnspython
