@@ -28,7 +28,7 @@ CHANNEL_ID = get_int("CHANNEL_ID")
 FORCE_SUB_CHANNEL = get_int("FORCE_SUB_CHANNEL", 0)
 
 FILE_AUTO_DELETE = get_int("FILE_AUTO_DELETE", 21600)
-TG_BOT_WORKERS = get_int("TG_BOT_WORKERS", 8)
+TG_BOT_WORKERS = get_int("TG_BOT_WORKERS", 5)
 PORT = os.environ.get("PORT", "8080")
 
 # ------------ optional texts/flags ------------
