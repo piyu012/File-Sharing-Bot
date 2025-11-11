@@ -7,10 +7,35 @@ import sys
 from datetime import datetime
 from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, PORT
 import pyrogram.utils
+from pymongo import MongoClient
+import time
+from pyrogram import filters
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
+# --- MongoDB Setup ---
+MONGO_URI = "YOUR_MONGO_URI"  # 👈 यहां अपनी MongoDB connection URI डालो
+DB_NAME = "MadflixDB"
+COLLECTION = "access_tokens"
 
+client = MongoClient(MONGO_URI)
+db = client[DB_NAME]
+tokens = db[COLLECTION]
+
+def is_token_valid(user_id: int):
+    user = tokens.find_one({"user_id": user_id})
+    if not user:
+        return False
+    expiry = user["expiry"]
+    return time.time() < expiry
+
+def renew_token(user_id: int):
+    expiry_time = time.time() + 24 * 60 * 60  # 24 hours validity
+    tokens.update_one(
+        {"user_id": user_id},
+        {"$set": {"expiry": expiry_time}},
+        upsert=True
+    )
 
 class Bot(Client):
     def __init__(self):
@@ -46,7 +71,7 @@ class Bot(Client):
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
-            test = await self.send_message(chat_id = db_channel.id, text = "Hey 🖐")
+            test = await self.send_message(chat_id=db_channel.id, text="Hey 🖐")
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__).warning(e)
@@ -58,23 +83,30 @@ class Bot(Client):
         self.LOGGER(__name__).info(f"Bot Running...!\n\nCreated By \nhttps://t.me/Madflix_Bots")
         self.LOGGER(__name__).info(f"""ミ💖 MADFLIX BOTZ 💖彡""")
         self.username = usr_bot_me.username
-        #web-response
+
+        # Web Server
         app = web.AppRunner(await web_server())
         await app.setup()
         bind_address = "0.0.0.0"
         await web.TCPSite(app, bind_address, PORT).start()
 
+        # Register token system handlers
+        @self.on_message(filters.command("start"))
+        async def start_command(_, message):
+            user_id = message.from_user.id
+            if not is_token_valid(user_id):
+                ad_link = "https://your-ad-link.example.com"  # 👈 यहां अपना ad link डालो
+                text = (
+                    "🔒 <b>Access Token Required</b>\n\n"
+                    "Your token has expired or not found.\n"
+                    "Watch an ad and renew your token to access the bot.\n\n"
+                    f"<a href='{ad_link}'>🎥 Watch Ad & Renew Token</a>"
+                )
+                await message.reply_text(text, disable_web_page_preview=False)
+                renew_token(user_id)
+            else:
+                await message.reply_text("✅ <b>Access Granted!</b>\nYou already have a valid token for 24 hours.")
+
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__).info("Bot Stopped...")
-            
-
-
-
-
-
-# Jishu Developer 
-# Don't Remove Credit 🥺
-# Telegram Channel @Madflix_Bots
-# Backup Channel @JishuBotz
-# Developer @JishuDeveloper
