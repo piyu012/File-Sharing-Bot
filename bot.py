@@ -1,16 +1,37 @@
 from aiohttp import web
 from plugins import web_server
 import pyromod.listen
-from pyrogram import Client
+from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
-from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, PORT
+from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, PORT, DB_URL, DB_NAME
 import pyrogram.utils
+from pymongo import MongoClient
+import time
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
+# --- MongoDB Connection ---
+client = MongoClient(DB_URL)
+db = client[DB_NAME]
+tokens = db["access_tokens"]
 
+# --- Token System ---
+def is_token_valid(user_id: int):
+    user = tokens.find_one({"user_id": user_id})
+    if not user:
+        return False
+    expiry = user["expiry"]
+    return time.time() < expiry
+
+def renew_token(user_id: int, minutes=2):
+    expiry_time = time.time() + (minutes * 60)
+    tokens.update_one(
+        {"user_id": user_id},
+        {"$set": {"expiry": expiry_time}},
+        upsert=True
+    )
 
 class Bot(Client):
     def __init__(self):
@@ -29,6 +50,7 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
 
+        # --- Force Sub Setup ---
         if FORCE_SUB_CHANNEL:
             try:
                 link = (await self.get_chat(FORCE_SUB_CHANNEL)).invite_link
@@ -38,43 +60,50 @@ class Bot(Client):
                 self.invitelink = link
             except Exception as a:
                 self.LOGGER(__name__).warning(a)
-                self.LOGGER(__name__).warning("Bot Can't Export Invite link From Force Sub Channel!")
-                self.LOGGER(__name__).warning(f"Please Double Check The FORCE_SUB_CHANNEL Value And Make Sure Bot Is Admin In Channel With Invite Users Via Link Permission, Current Force Sub Channel Value: {FORCE_SUB_CHANNEL}")
-                self.LOGGER(__name__).info("\nBot Stopped. https://t.me/MadflixBots_Support For Support")
+                self.LOGGER(__name__).info("Please check FORCE_SUB_CHANNEL value.")
                 sys.exit()
 
+        # --- DB Channel Test ---
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
-            test = await self.send_message(chat_id = db_channel.id, text = "Hey 🖐")
+            test = await self.send_message(chat_id=db_channel.id, text="Hey 🖐")
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning(f"Make Sure Bot Is Admin In DB Channel, And Double Check The CHANNEL_ID Value, Current Value: {CHANNEL_ID}")
-            self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/MadflixBots_Support For Support")
+            self.LOGGER(__name__).warning("Make Sure Bot Is Admin In DB Channel")
             sys.exit()
 
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info(f"Bot Running...!\n\nCreated By \nhttps://t.me/Madflix_Bots")
-        self.LOGGER(__name__).info(f"""ミ💖 MADFLIX BOTZ 💖彡""")
         self.username = usr_bot_me.username
-        #web-response
+        self.LOGGER(__name__).info(f"Bot Running... | @{self.username}")
+
+        # --- Web Server Start ---
         app = web.AppRunner(await web_server())
         await app.setup()
-        bind_address = "0.0.0.0"
-        await web.TCPSite(app, bind_address, PORT).start()
+        await web.TCPSite(app, "0.0.0.0", PORT).start()
+
+        # --- Start Command (Token + Ad) ---
+        @self.on_message(filters.command("start"))
+        async def start_command(_, message):
+            user_id = message.from_user.id
+            if not is_token_valid(user_id):
+                ad_link = "https://example.com/watch-ad"  # Random ad link
+                text = (
+                    "🎯 <b>Access Token Required</b>\n\n"
+                    "आपका टोकन expire हो चुका है या अभी बना नहीं है।\n\n"
+                    "👇 नीचे दिए लिंक पर क्लिक करें और ad देखें ताकि नया टोकन मिले:\n\n"
+                    f"<a href='{ad_link}'>🎬 Watch Ad & Unlock Access</a>\n\n"
+                    "🕒 टोकन valid रहेगा <b>2 मिनट</b> तक।"
+                )
+                await message.reply_text(text, disable_web_page_preview=False)
+                renew_token(user_id, 2)
+            else:
+                await message.reply_text(
+                    "✅ <b>Access Granted!</b>\nअब आप बॉट से content प्राप्त कर सकते हैं।",
+                    disable_web_page_preview=True
+                )
 
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__).info("Bot Stopped...")
-            
-
-
-
-
-
-# Jishu Developer 
-# Don't Remove Credit 🥺
-# Telegram Channel @Madflix_Bots
-# Backup Channel @JishuBotz
-# Developer @JishuDeveloper
