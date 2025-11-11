@@ -3,19 +3,21 @@ from plugins import web_server
 import pyromod.listen
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
-import sys
+import sys, time
 from datetime import datetime
-from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, PORT, DB_URL, DB_NAME
-import pyrogram.utils
 from pymongo import MongoClient
-import time
+from config import (
+    API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS,
+    FORCE_SUB_CHANNEL, CHANNEL_ID, PORT, DB_URL, DB_NAME
+)
+import pyrogram.utils
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
 # --- MongoDB Connection ---
 client = MongoClient(DB_URL)
 db = client[DB_NAME]
-tokens = db["access_tokens"]  # नया collection access_tokens
+tokens = db["access_tokens"]  # access_tokens collection
 
 # --- Token System ---
 def is_token_valid(user_id: int):
@@ -48,6 +50,7 @@ class Bot(Client):
     async def start(self):
         await super().start()
         usr_bot_me = await self.get_me()
+        self.username = usr_bot_me.username
         self.uptime = datetime.now()
 
         # --- Force Sub Setup ---
@@ -64,33 +67,33 @@ class Bot(Client):
                 self.LOGGER(__name__).info("Please check FORCE_SUB_CHANNEL value.")
                 sys.exit()
 
-        # --- DB Channel Test ---
+        # --- Channel Check ---
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
-            test = await self.send_message(chat_id=db_channel.id, text="Hey 🖐")
+            test = await self.send_message(chat_id=db_channel.id, text="✅ Bot Connected To Channel")
             await test.delete()
         except Exception as e:
             self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning("Make Sure Bot Is Admin In DB Channel")
+            self.LOGGER(__name__).warning("❌ Make Sure Bot Is Admin In Channel")
             sys.exit()
 
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info(f"Bot Running...!\n\nCreated By https://t.me/Madflix_Bots")
-        self.LOGGER(__name__).info(f"ミ💖 MADFLIX BOTZ 💖彡")
-        self.username = usr_bot_me.username
+        self.LOGGER(__name__).info(f"Bot Started as @{self.username}")
 
         # --- Web Server Start ---
         app = web.AppRunner(await web_server())
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
-        # --- Token Based Access System ---
+        # --- Main Command ---
         @self.on_message(filters.command("start"))
         async def start_command(_, message):
             user_id = message.from_user.id
+
+            # Token check
             if not is_token_valid(user_id):
-                ad_link = "https://your-ad-link.example.com"  # 👈 यहां अपना ad link डालो
+                ad_link = "https://your-ad-link.example.com"  # 👈 यहां अपना ad link भरो
                 text = (
                     "🔒 <b>Access Token Required</b>\n\n"
                     "आपका टोकन expire हो चुका है या अभी बना नहीं है।\n\n"
@@ -100,10 +103,23 @@ class Bot(Client):
                 )
                 await message.reply_text(text, disable_web_page_preview=False)
                 renew_token(user_id)
-            else:
-                await message.reply_text(
-                    "✅ <b>Access Granted!</b>\nआपका टोकन अभी वैध है, आप बॉट का इस्तेमाल कर सकते हैं।"
-                )
+                return
+
+            # Valid Token → Send content
+            await message.reply_text("✅ <b>Access Granted!</b>\nआपका टोकन valid है — content भेजा जा रहा है...")
+
+            try:
+                async for msg in self.get_chat_history(CHANNEL_ID, limit=3):  # कितने message भेजने हैं
+                    if msg.text:
+                        await message.reply_text(msg.text)
+                    elif msg.photo:
+                        await message.reply_photo(msg.photo.file_id, caption=msg.caption or "")
+                    elif msg.video:
+                        await message.reply_video(msg.video.file_id, caption=msg.caption or "")
+                    elif msg.document:
+                        await message.reply_document(msg.document.file_id, caption=msg.caption or "")
+            except Exception as e:
+                await message.reply_text(f"⚠️ Error fetching content: <code>{e}</code>")
 
     async def stop(self, *args):
         await super().stop()
