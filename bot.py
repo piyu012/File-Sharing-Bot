@@ -1,7 +1,7 @@
 from aiohttp import web
 from plugins import web_server
 import pyromod.listen
-from pyrogram import Client, filters
+from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
@@ -12,12 +12,11 @@ import time
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
-# --- MongoDB Connection ---
+# ===== MongoDB Setup =====
 client = MongoClient(DB_URL)
 db = client[DB_NAME]
 tokens = db["access_tokens"]
 
-# --- Token System ---
 def is_token_valid(user_id: int):
     user = tokens.find_one({"user_id": user_id})
     if not user:
@@ -27,11 +26,7 @@ def is_token_valid(user_id: int):
 
 def renew_token(user_id: int, minutes=2):
     expiry_time = time.time() + (minutes * 60)
-    tokens.update_one(
-        {"user_id": user_id},
-        {"$set": {"expiry": expiry_time}},
-        upsert=True
-    )
+    tokens.update_one({"user_id": user_id}, {"$set": {"expiry": expiry_time}}, upsert=True)
 
 class Bot(Client):
     def __init__(self):
@@ -63,7 +58,7 @@ class Bot(Client):
                 self.LOGGER(__name__).info("Please check FORCE_SUB_CHANNEL value.")
                 sys.exit()
 
-        # --- DB Channel Test ---
+        # --- DB Channel Check ---
         try:
             db_channel = await self.get_chat(CHANNEL_ID)
             self.db_channel = db_channel
@@ -83,27 +78,9 @@ class Bot(Client):
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
-        # --- Start Command (Token + Ad) ---
-        @self.on_message(filters.command("start"))
-        async def start_command(_, message):
-            user_id = message.from_user.id
-            if not is_token_valid(user_id):
-                ad_link = "https://example.com/watch-ad"  # Random ad link
-                text = (
-                    "🎯 <b>Access Token Required</b>\n\n"
-                    "आपका टोकन expire हो चुका है या अभी बना नहीं है।\n\n"
-                    "👇 नीचे दिए लिंक पर क्लिक करें और ad देखें ताकि नया टोकन मिले:\n\n"
-                    f"<a href='{ad_link}'>🎬 Watch Ad & Unlock Access</a>\n\n"
-                    "🕒 टोकन valid रहेगा <b>2 मिनट</b> तक।"
-                )
-                await message.reply_text(text, disable_web_page_preview=False)
-                renew_token(user_id, 2)
-            else:
-                await message.reply_text(
-                    "✅ <b>Access Granted!</b>\nअब आप बॉट से content प्राप्त कर सकते हैं।",
-                    disable_web_page_preview=True
-                )
-
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__).info("Bot Stopped...")
+
+# helper access for plugins
+__all__ = ["tokens", "is_token_valid", "renew_token"]
