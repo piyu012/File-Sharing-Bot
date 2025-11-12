@@ -3,13 +3,15 @@ from aiohttp import web
 from bot import Bot
 import dns.resolver
 
-# ✅ DNS fix
+# ✅ DNS Resolver fix
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
 dns.resolver.default_resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
 
-# ✅ Web server setup
+# --------------------------
+# 🌐 WEB SERVER SETUP
+# --------------------------
 async def handle_root(request):
-    return web.Response(text="✅ Bot server running on Render!")
+    return web.Response(text="✅ Server Running | Telegram Bot Connected")
 
 async def handle_verify(request):
     try:
@@ -22,10 +24,9 @@ async def handle_verify(request):
 
         if token == "my_secret_token":
             print(f"✅ Verified user: {user_id}")
-            return web.json_response({"status": "ok", "message": "Verification successful"})
+            return web.json_response({"status": "ok", "message": "Verified"})
         else:
             return web.json_response({"status": "error", "message": "Invalid token"}, status=401)
-
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
 
@@ -33,23 +34,26 @@ async def web_server():
     app = web.Application()
     app.router.add_get("/", handle_root)
     app.router.add_post("/verify", handle_verify)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
     print("🌐 Web server started on port 8080")
 
-# ✅ Main bot + web startup
+# --------------------------
+# 🤖 BOT + WEB STARTUP
+# --------------------------
 async def main():
     bot = Bot()
-    await bot.start()
-    print("🤖 Bot started")
 
-    # Run web server in same event loop
-    await web_server()
+    # ✅ एक साथ run करने के लिए asyncio.create_task() यूज़ करो
+    web_task = asyncio.create_task(web_server())
+    bot_task = asyncio.create_task(bot.start())
 
-    # Keep alive
-    await asyncio.Event().wait()
+    print("✅ Bot & Web initialized...")
+
+    await asyncio.gather(web_task, bot_task)
 
 if __name__ == "__main__":
     asyncio.run(main())
