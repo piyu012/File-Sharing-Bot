@@ -1,28 +1,39 @@
+# api.py
 from aiohttp import web
-from pymongo import MongoClient
+from datetime import datetime
 import time
-import os
-
-DB_URL = os.getenv("DB_URL")
-DB_NAME = os.getenv("DB_NAME")
+from pymongo import MongoClient
+from config import DB_URL, DB_NAME
 
 client = MongoClient(DB_URL)
 db = client[DB_NAME]
-tokens = db["access_tokens"]
+ads = db["ad_views"]
 
-async def renew_token(request):
-    data = await request.json()
-    user_id = int(data["user_id"])
-    expiry_time = time.time() + 24 * 60 * 60  # 24 घंटे
-    tokens.update_one(
-        {"user_id": user_id},
-        {"$set": {"expiry": expiry_time}},
+# ✅ Route: User opens ad link
+async def ad_view(request):
+    uid = request.query.get("uid")
+    code = request.query.get("code")
+
+    if not uid or not code:
+        return web.Response(text="❌ Invalid ad link.")
+
+    ads.update_one(
+        {"user_id": int(uid)},
+        {"$set": {"viewed": True, "view_time": time.time(), "code": code}},
         upsert=True
     )
-    return web.json_response({"status": "success", "expiry": expiry_time})
+    return web.Response(text="✅ Ad viewed successfully. You can now return to Telegram and verify!")
 
-app = web.Application()
-app.router.add_post("/renew", renew_token)
+# ✅ Optional check endpoint
+async def check_view(request):
+    uid = request.query.get("uid")
+    user = ads.find_one({"user_id": int(uid)})
+    if not user:
+        return web.json_response({"viewed": False})
+    return web.json_response({"viewed": user.get("viewed", False)})
 
-if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=8080)
+# ✅ Function to include routes
+async def setup_routes(app):
+    app.router.add_get("/ad", ad_view)
+    app.router.add_get("/check", check_view)
+    return app
