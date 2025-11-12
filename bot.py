@@ -8,6 +8,7 @@ from datetime import datetime
 from config import API_HASH, API_ID, LOGGER, BOT_TOKEN, TG_BOT_WORKERS, FORCE_SUB_CHANNEL, CHANNEL_ID, PORT, DB_URL, DB_NAME
 import pyrogram.utils
 from pymongo import MongoClient
+import asyncio
 import time
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
@@ -17,6 +18,7 @@ client = MongoClient(DB_URL)
 db = client[DB_NAME]
 tokens = db["access_tokens"]
 
+# ===== Token Management =====
 def is_token_valid(user_id: int):
     user = tokens.find_one({"user_id": user_id})
     if not user:
@@ -28,6 +30,16 @@ def renew_token(user_id: int, minutes=2):
     expiry_time = time.time() + (minutes * 60)
     tokens.update_one({"user_id": user_id}, {"$set": {"expiry": expiry_time}}, upsert=True)
 
+# ===== Background Cleanup =====
+async def cleanup_tokens():
+    while True:
+        now = time.time()
+        result = tokens.delete_many({"expiry": {"$lt": now}})
+        if result.deleted_count > 0:
+            print(f"🧹 Deleted {result.deleted_count} expired tokens.")
+        await asyncio.sleep(300)  # every 5 minutes
+
+# ===== Bot Class =====
 class Bot(Client):
     def __init__(self):
         super().__init__(
@@ -72,6 +84,9 @@ class Bot(Client):
         self.set_parse_mode(ParseMode.HTML)
         self.username = usr_bot_me.username
         self.LOGGER(__name__).info(f"Bot Running... | @{self.username}")
+
+        # --- Start Token Cleanup Background Task ---
+        asyncio.create_task(cleanup_tokens())
 
         # --- Web Server Start ---
         app = web.AppRunner(await web_server())
