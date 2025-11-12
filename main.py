@@ -1,6 +1,6 @@
 from bot import Bot
-from api 
-import dns.resolver import setup_routes
+import dns.resolver 
+from api import setup_routes
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
 dns.resolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1']
 
